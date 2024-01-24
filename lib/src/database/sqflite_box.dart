@@ -14,6 +14,8 @@ class BoxCollection with ZoneTransactionMixin {
 
   BoxCollection(this._db, this.boxNames, this.name);
 
+  static const bool isWeb = false;
+
   static Future<BoxCollection> open(
     String name,
     Set<String> boxNames, {
@@ -67,7 +69,7 @@ class BoxCollection with ZoneTransactionMixin {
 
   Future<void> close() => _db.close();
 
-  static Future<void> delete(String path, [DatabaseFactory? factory]) =>
+  static Future<void> delete(String path, [dynamic factory]) =>
       (factory ?? databaseFactory).deleteDatabase(path);
 }
 
