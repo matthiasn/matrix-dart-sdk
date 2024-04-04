@@ -18,9 +18,7 @@
 
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 import 'dart:math';
-import 'dart:typed_data';
 
 import 'package:sqflite_common/sqflite.dart';
 
@@ -36,7 +34,10 @@ import 'package:matrix/src/utils/run_benchmarked.dart';
 import 'package:matrix/src/database/indexeddb_box.dart'
     if (dart.library.io) 'package:matrix/src/database/sqflite_box.dart';
 
-class MatrixSdkDatabase extends DatabaseApi {
+import 'package:matrix/src/database/database_file_storage_stub.dart'
+    if (dart.library.io) 'package:matrix/src/database/database_file_storage_io.dart';
+
+class MatrixSdkDatabase extends DatabaseApi with DatabaseFileStorage {
   static const int version = 7;
   final String name;
   late BoxCollection _collection;
@@ -86,12 +87,6 @@ class MatrixSdkDatabase extends DatabaseApi {
   late Box<String> _seenDeviceIdsBox;
 
   late Box<String> _seenDeviceKeysBox;
-  @override
-  bool get supportsFileStoring => fileStoragePath != null;
-  @override
-  final int maxFileSize;
-  final Directory? fileStoragePath;
-  final Duration? deleteFilesAfterDuration;
 
   static const String _clientBoxName = 'box_client';
 
@@ -153,10 +148,26 @@ class MatrixSdkDatabase extends DatabaseApi {
     this.database,
     this.idbFactory,
     this.sqfliteFactory,
-    this.maxFileSize = 0,
-    this.fileStoragePath,
-    this.deleteFilesAfterDuration,
-  });
+    int maxFileSize = 0,
+    @Deprecated(
+        'Breaks support for web standalone. Use [fileStorageLocation] instead.')
+    Object? fileStoragePath,
+
+    /// A [Uri] defining the file storage location.
+    ///
+    /// Unless you support custom Uri schemes, this should usually be a
+    /// [Uri.directory] identifier.
+    ///
+    /// Using a [Uri] as type here enables users to technically extend the API to
+    /// support file storage on non-io platforms as well - or to use non-File
+    /// based storage mechanisms on io.
+    Uri? fileStorageLocation,
+    Duration? deleteFilesAfterDuration,
+  }) {
+    this.maxFileSize = maxFileSize;
+    this.fileStorageLocation = fileStorageLocation;
+    this.deleteFilesAfterDuration = deleteFilesAfterDuration;
+  }
 
   Future<void> open() async {
     _collection = await BoxCollection.open(
@@ -296,26 +307,6 @@ class MatrixSdkDatabase extends DatabaseApi {
   }
 
   @override
-  Future<void> deleteOldFiles(int savedAt) async {
-    final dir = fileStoragePath;
-    final deleteFilesAfterDuration = this.deleteFilesAfterDuration;
-    if (!supportsFileStoring ||
-        dir == null ||
-        deleteFilesAfterDuration == null) {
-      return;
-    }
-    final entities = await dir.list().toList();
-    for (final file in entities) {
-      if (file is! File) continue;
-      final stat = await file.stat();
-      if (DateTime.now().difference(stat.modified) > deleteFilesAfterDuration) {
-        Logs().v('Delete old file', file.path);
-        await file.delete();
-      }
-    }
-  }
-
-  @override
   Future<void> forgetRoom(String roomId) async {
     await _timelineFragmentsBox.delete(TupleKey(roomId, '').toString());
     final eventsBoxKeys = await _eventsBox.getAllKeys();
@@ -436,18 +427,6 @@ class MatrixSdkDatabase extends DatabaseApi {
 
         return await _getEventsByIds(eventIds.cast<String>(), room);
       });
-
-  @override
-  Future<Uint8List?> getFile(Uri mxcUri) async {
-    final fileStoragePath = this.fileStoragePath;
-    if (!supportsFileStoring || fileStoragePath == null) return null;
-
-    final file =
-        File('${fileStoragePath.path}/${mxcUri.toString().split('/').last}');
-
-    if (await file.exists()) return await file.readAsBytes();
-    return null;
-  }
 
   @override
   Future<StoredInboundGroupSession?> getInboundGroupSession(
@@ -1120,18 +1099,6 @@ class MatrixSdkDatabase extends DatabaseApi {
         eventUpdate.content,
       );
     }
-  }
-
-  @override
-  Future<void> storeFile(Uri mxcUri, Uint8List bytes, int time) async {
-    final fileStoragePath = this.fileStoragePath;
-    if (!supportsFileStoring || fileStoragePath == null) return;
-
-    final file =
-        File('${fileStoragePath.path}/${mxcUri.toString().split('/').last}');
-
-    if (await file.exists()) return;
-    await file.writeAsBytes(bytes);
   }
 
   @override
