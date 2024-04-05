@@ -25,6 +25,7 @@ import 'dart:typed_data';
 import 'package:async/async.dart';
 import 'package:collection/collection.dart' show IterableExtension;
 import 'package:http/http.dart' as http;
+import 'package:matrix/msc_extensions/msc_unpublished_custom_refresh_token_lifetime/msc_unpublished_custom_refresh_token_lifetime.dart';
 import 'package:mime/mime.dart';
 import 'package:olm/olm.dart' as olm;
 import 'package:random_string/random_string.dart';
@@ -195,6 +196,11 @@ class Client extends MatrixApi {
     /// most common reason for soft logouts.
     /// You can also perform a new login here by passing the existing deviceId.
     this.onSoftLogout,
+
+    /// Experimental feature which allows to send a custom refresh token
+    /// lifetime to the server which overrides the default one. Needs server
+    /// support.
+    this.customRefreshTokenLifetime,
   })  : syncFilter = syncFilter ??
             Filter(
               room: RoomFilter(
@@ -239,6 +245,8 @@ class Client extends MatrixApi {
     registerDefaultCommands();
   }
 
+  Duration? customRefreshTokenLifetime;
+
   /// Fetches the refreshToken from the database and tries to get a new
   /// access token from the server and then stores it correctly. Unlike the
   /// pure API call of `Client.refresh()` this handles the complete soft
@@ -258,7 +266,10 @@ class Client extends MatrixApi {
       throw Exception('Cannot refresh access token when not logged in');
     }
 
-    final tokenResponse = await refresh(refreshToken);
+    final tokenResponse = await refreshWithCustomRefreshTokenLifetime(
+      refreshToken,
+      refreshTokenLifetimeMs: customRefreshTokenLifetime?.inMilliseconds,
+    );
 
     accessToken = tokenResponse.accessToken;
     final expiresInMs = tokenResponse.expiresInMs;
