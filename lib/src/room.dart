@@ -1405,16 +1405,17 @@ class Room {
     return;
   }
 
-  Future<TimelineChunk?> getEventContext(String eventId) async {
+  Future<TimelineChunk?> getEventContext(String eventId,
+  {bool includeBefore = true, includeAfter = true}) async {
     final resp = await client.getEventContext(id, eventId,
         limit: Room.defaultHistoryCount
         // filter: jsonEncode(StateFilter(lazyLoadMembers: true).toJson()),
         );
 
     final events = [
-      if (resp.eventsAfter != null) ...resp.eventsAfter!.reversed,
+      if (resp.eventsAfter != null && includeAfter) ...resp.eventsAfter!.reversed,
       if (resp.event != null) resp.event!,
-      if (resp.eventsBefore != null) ...resp.eventsBefore!
+      if (resp.eventsBefore != null && includeBefore) ...resp.eventsBefore!
     ].map((e) => Event.fromMatrixEvent(e, this)).toList();
 
     // Try again to decrypt encrypted events but don't update the database.
@@ -1466,6 +1467,8 @@ class Room {
       void Function(int insertID)? onInsert,
       void Function()? onNewEvent,
       void Function()? onUpdate,
+      bool includeBefore = true,
+      bool includeAfter = true,
       String? eventContextId}) async {
     await postLoad();
 
@@ -1494,11 +1497,11 @@ class Room {
     }
 
     var chunk = TimelineChunk(events: events);
-    // Load the timeline arround eventContextId if set
+    // Load the timeline around eventContextId if set
     if (eventContextId != null) {
       if (!events.any((Event event) => event.eventId == eventContextId)) {
         chunk =
-            await getEventContext(eventContextId) ?? TimelineChunk(events: []);
+            await getEventContext(eventContextId, includeBefore: includeBefore, includeAfter: includeAfter) ?? TimelineChunk(events: []);
       }
     }
 
